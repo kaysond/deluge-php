@@ -17,18 +17,25 @@ class deluge {
 			CURLOPT_COOKIEJAR  => "",
 			CURLOPT_CONNECTTIMEOUT => 5,
 			CURLOPT_TIMEOUT => 5,
-			//CURLOPT_SSL_VERIFYPEER => false, THIS IS INSECURE!! However, deluge appears not to send intermediate certificates, so it can be necessary. Use with caution!
+			CURLOPT_SSL_VERIFYPEER => false,
 		);
 		curl_setopt_array($this->ch, $curl_options);
 
-		//Log in and get cookies
+		//Log in and get cookies, then make sure the web api is connected to a daemon
 		try {
 			$result = $this->makeRequest("auth.login", array($password));
-			if ($result === false)
+			if (gettype($result) != 'boolean' || $result != true) {
 				throw new Exception("Login failed");
+			}
+			else {
+				$result = $this->makeRequest("auth.check_session", array());
+				if (gettype($result) != 'boolean' || $result != true) {
+					throw new Exception("Web api is not connected to a daemon");
+				}
+			}
 		}
 		catch (Exception $e) {
-			throw new Exception("Failed to initiate deluge api", 0, $e);
+			throw new Exception("Failed to initiate deluge api: " . $e->getMessage());
 		}
 	}
 
@@ -475,16 +482,16 @@ class deluge {
 		$result = curl_exec($this->ch);
 
 		if ($result === false)
-			throw new Exception("Could not log in due to curl error (no. " . curl_errno($this->ch) . "): " . curl_error($this->ch));
+			throw new Exception("Request for method $method failed due to curl error (no. " . curl_errno($this->ch) . "): " . curl_error($this->ch));
 
 		$http_code = curl_getinfo($this->ch, CURLINFO_HTTP_CODE);
 
 		if ($http_code != 200)
-			throw new Exception("Request for method $method returned http code $http_code");
+			throw new Exception("Request for method $method returned unexpected http code: $http_code (expected 200)");
 		
 		$result = json_decode($result);
 		if (!is_null($result->error))
-			throw new Exception("Method request returned an error (no. " . $result->error->code . "): " . $result->error->message);
+			throw new Exception("Request for method $method returned a deluge error (no. " . $result->error->code . "): " . $result->error->message);
 		
 		if ($result->id != $this->request_id)
 			throw new Exception("Response id did not match request id");
