@@ -11,6 +11,7 @@ include("deluge.class.php");
 $deluge = new deluge("https://127.0.0.1:8112", "yourpassword");
 $torrents = $deluge->getTorrents(null, null);
 $status = $deluge->getTorrentStatus($torrents[0]->hash, array(), array());
+$deluge->close() //Closes the cURL handle
 ```
 Functions take a variety of arguments. Unused arguments are usually either null (equivalent to Python None) or array(). Experimentation may be necessary.
 

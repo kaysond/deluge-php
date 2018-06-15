@@ -1,35 +1,36 @@
 <?php
-
 class deluge {
 	private $ch;
 	private $url;
 	private $request_id;
+	public 	$last_http_transaction;
 
-	function __construct($host, $password)
-	{
+	function __construct($host, $password)	{
 		$this->url = $host . (substr($host, -1) == "/" ? "" : "/") . "json";
 		$this->request_id = 0;
 		$this->ch = curl_init($this->url);
 		$curl_options = array(
 			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_HEADER => true,
 			CURLOPT_HTTPHEADER => array("Accept: application/json", "Content-Type: application/json"),
 			CURLOPT_ENCODING => "",
 			CURLOPT_COOKIEJAR  => "",
-			CURLOPT_CONNECTTIMEOUT => 5,
-			CURLOPT_TIMEOUT => 5,
-			CURLOPT_SSL_VERIFYPEER => false,
+			CURLOPT_CONNECTTIMEOUT => 10,
+			CURLOPT_TIMEOUT => 10,
+			CURLOPT_SSL_VERIFYPEER => false, //THIS IS INSECURE!! However, deluge appears not to send intermediate certificates, so it can be necessary. Use with caution!
+			CURLINFO_HEADER_OUT => true
 		);
 		curl_setopt_array($this->ch, $curl_options);
 
 		//Log in and get cookies, then make sure the web api is connected to a daemon
 		try {
-			$result = $this->makeRequest("auth.login", array($password));
-			if (gettype($result) != 'boolean' || $result != true) {
+			$response = $this->makeRequest("auth.login", array($password));
+			if (gettype($response) != 'boolean' || $response != true) {
 				throw new Exception("Login failed");
 			}
 			else {
-				$result = $this->makeRequest("auth.check_session", array());
-				if (gettype($result) != 'boolean' || $result != true) {
+				$response = $this->makeRequest("auth.check_session", array());
+				if (gettype($response) != 'boolean' || $response != true) {
 					throw new Exception("Web api is not connected to a daemon");
 				}
 			}
@@ -37,6 +38,10 @@ class deluge {
 		catch (Exception $e) {
 			throw new Exception("Failed to initiate deluge api: " . $e->getMessage());
 		}
+	}
+
+	function close() {
+		curl_close($this->ch);
 	}
 
 	/////////////////////////////
@@ -476,28 +481,37 @@ class deluge {
 	}
 
 	private function makeRequest($method, $params) {
-		$post_data = array("id" => $this->request_id, "method" => $method, "params" => $params);
-		curl_setopt($this->ch, CURLOPT_POSTFIELDS, json_encode($post_data));
+		$post_data = json_encode(array("id" => $this->request_id, "method" => $method, "params" => $params));
+		curl_setopt($this->ch, CURLOPT_POSTFIELDS, $post_data);
 
-		$result = curl_exec($this->ch);
+		$response = curl_exec($this->ch);
 
-		if ($result === false)
+		if ($response === false)
 			throw new Exception("Request for method $method failed due to curl error (no. " . curl_errno($this->ch) . "): " . curl_error($this->ch));
 
-		$http_code = curl_getinfo($this->ch, CURLINFO_HTTP_CODE);
+		list($response_header, $response_body) = explode("\r\n\r\n", $response, 2);
+		$info = curl_getinfo($this->ch);
+		$request_header = trim($info["request_header"]);
+		$http_code = $info["http_code"];
+
+		$this->last_http_transaction = new StdClass();
+		$this->last_http_transaction->request_header = $request_header;
+		$this->last_http_transaction->request_body = $post_data;
+		$this->last_http_transaction->response_header = $response_header;
+		$this->last_http_transaction->response_body = $response_body;
 
 		if ($http_code != 200)
 			throw new Exception("Request for method $method returned unexpected http code: $http_code (expected 200)");
 		
-		$result = json_decode($result);
-		if (!is_null($result->error))
-			throw new Exception("Request for method $method returned a deluge error (no. " . $result->error->code . "): " . $result->error->message);
+		$response_obj = json_decode($response_body);
+		if (!is_null($response_obj->error))
+			throw new Exception("Request for method $method returned a deluge error (no. {$response_obj->error->code}): {$response_obj->error->message}");
 		
-		if ($result->id != $this->request_id)
-			throw new Exception("Response id did not match request id");
+		if ($response_obj->id != $this->request_id)
+			throw new Exception("Sent request id {$this->request_id} but received response id {$response_obj->id}");
 
 		$this->request_id++;
-		return $result->result;
+		return $response_obj->result;
 	}
 }
 
