@@ -15,4 +15,6 @@ $deluge->close() //Closes the cURL handle
 ```
 Functions take a variety of arguments. Unused arguments are usually either null (equivalent to Python None) or array(). Experimentation may be necessary.
 
+For debugging purposes, the header and body of the last request and response are stored in the public class property `last_http_transaction` (stdObj with obviously named properties)
+
 Check the deluge-web log for details of failed requests. Failures throw php Exception's.
