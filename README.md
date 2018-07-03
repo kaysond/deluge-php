@@ -18,3 +18,6 @@ Functions take a variety of arguments. Unused arguments are usually either null 
 For debugging purposes, the header and body of the last request and response are stored in the public class property `last_http_transaction` (stdObj with obviously named properties)
 
 Check the deluge-web log for details of failed requests. Failures throw php Exception's.
+
+## License
+GPL v3.0: See LICENSE.md
